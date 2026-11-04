@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.jpg" alt="Maker Assistant Banner" width="100%">
+</p>
+
 # 🛠️ Maker Assistant (Always-On Voice AI)
 
 > **100% Local, Always-On Voice AI Assistant tailored for Hardware Engineers, Makers & Coders.**  
