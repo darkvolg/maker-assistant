@@ -1,0 +1,46 @@
+# ==============================================================
+# Maker Assistant Configuration
+# ==============================================================
+
+assistant:
+  name: "Джарвис"
+  wake_word: "джарвис"         # Слово активации (или "ada", "компьютер", "помощник")
+  language: "ru"               # "ru" or "en"
+  debug: true
+
+audio:
+  sample_rate: 16000
+  channels: 1
+  energy_threshold: 0.015      # Порог тишины для детекции речи (VAD)
+  silence_timeout_sec: 1.2     # Сколько секунд тишины ждать для окончания фразы
+
+stt:
+  engine: "faster-whisper"
+  model_size: "medium"         # "tiny", "base", "small", "medium", "large-v3"
+  device: "cuda"               # "cuda" (если есть NVIDIA GPU) или "cpu"
+  compute_type: "float16"      # "float16" для GPU, "int8" для CPU
+  beam_size: 5
+
+tts:
+  engine: "edge-tts"           # "edge-tts" (бесплатно, высокое качество) или "console"
+  voice: "ru-RU-DmitryNeural"  # или "ru-RU-SvetlanaNeural", "en-US-GuyNeural"
+  rate: "+10%"
+  volume: "+0%"
+
+brain:
+  provider: "ollama"           # "ollama" (локально) | "deepseek" | "openai"
+  model: "qwen2.5:7b"          # или "deepseek-chat", "phi4", "llama3.2"
+  base_url: "http://localhost:11434/v1"
+  api_key: "ollama"            # или ваш токен в .env
+  temperature: 0.2
+
+skills:
+  components:
+    enabled: true
+    storage_path: "examples/sklad_example.json"
+  smart_home:
+    enabled: true
+    ha_url: ""
+    ha_token: ""
+  system_tools:
+    enabled: true

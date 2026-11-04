@@ -1,0 +1,22 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv/
+env/
+venv/
+ENV/
+
+# Model caches & Audio logs
+models/
+*.wav
+*.mp3
+*.log
+.assistant.lock
+
+# OS
+.DS_Store
+Thumbs.db

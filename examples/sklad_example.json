@@ -1,0 +1,39 @@
+{
+  "components": [
+    {
+      "name": "ESP32-WROOM-32",
+      "category": "Микроконтроллеры",
+      "package": "Module",
+      "qty": 5,
+      "location": "Ячейка A-12 (Пластиковый органайзер)"
+    },
+    {
+      "name": "Резистор 10 кОм",
+      "category": "Резисторы",
+      "package": "SMD 0805",
+      "qty": 150,
+      "location": "Лента R-10K (Кассета SMD)"
+    },
+    {
+      "name": "Резистор 4.7 кОм",
+      "category": "Резисторы",
+      "package": "SMD 0805",
+      "qty": 80,
+      "location": "Лента R-4K7"
+    },
+    {
+      "name": "Датчик BME280",
+      "category": "Датчики",
+      "package": "I2C Модуль",
+      "qty": 3,
+      "location": "Ячейка B-04"
+    },
+    {
+      "name": "Адресная лента WS2812B 5V",
+      "category": "LED",
+      "package": "60 led/m",
+      "qty": 2,
+      "location": "Коробка со светодиодами №2"
+    }
+  ]
+}
