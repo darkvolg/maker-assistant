@@ -36,19 +36,38 @@ class Brain:
         self.base_url = brain_cfg.get("base_url", "http://localhost:11434/v1")
         self.api_key = brain_cfg.get("api_key", "ollama")
         self.temperature = brain_cfg.get("temperature", 0.2)
+        
+        # Резервный локальный Ollama URL на случай сбоя облака
+        self.local_ollama_url = "http://127.0.0.1:11434/v1"
+
+    def _call_llm_api(self, base_url: str, model: str, api_key: str, payload: dict) -> Tuple[bool, str]:
+        """Вызывает LLM endpoint с жесткими таймаутами (2.0 сек подключение, 8.0 сек ответ)."""
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+        endpoint = f"{base_url.rstrip('/')}/chat/completions"
+        try:
+            resp = requests.post(endpoint, json=payload, headers=headers, timeout=(2.0, 8.0))
+            if resp.status_code == 200:
+                raw_text = resp.json()["choices"][0]["message"]["content"].strip()
+                return True, raw_text
+            else:
+                logger.warning(f"LLM API returned status {resp.status_code} at {endpoint}")
+                return False, f"API Error: {resp.status_code}"
+        except Exception as e:
+            logger.warning(f"Connection failed to {endpoint}: {e}")
+            return False, str(e)
 
     def process(self, user_query: str) -> str:
         """
-        Processes user query through LLM, executes skills if required,
-        and returns final response text ready for TTS.
+        Обрабатывает запрос с каскадом отказоустойчивости:
+        1. Основной провайдер (Cloud/Ollama) ->
+        2. Резервный локальный Ollama ->
+        3. Локальные rule-based навыки без сети.
         """
         skills_doc = registry.get_skill_descriptions()
         system_prompt = SYSTEM_PROMPT_TEMPLATE.format(skills=skills_doc)
-
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
-        }
 
         payload = {
             "model": self.model,
@@ -59,56 +78,56 @@ class Brain:
             "temperature": self.temperature
         }
 
-        endpoint = f"{self.base_url.rstrip('/')}/chat/completions"
+        # 1. Попытка через основной настроенный провайдер
+        success, raw_text = self._call_llm_api(self.base_url, self.model, self.api_key, payload)
 
-        try:
-            resp = requests.post(endpoint, json=payload, headers=headers, timeout=20)
-            if resp.status_code != 200:
-                logger.error(f"Brain API error: {resp.status_code} - {resp.text}")
-                return "Извините, не удалось связаться с языковой моделью."
+        # 2. Если основной провайдер (например, облачный DeepSeek) упал, пробуем локальный Ollama
+        if not success and self.provider != "ollama":
+            logger.info("Cloud LLM unavailable. Falling back to local Ollama instance...")
+            payload["model"] = "qwen2.5:7b"  # Дефолтная локальная модель
+            success, raw_text = self._call_llm_api(self.local_ollama_url, "qwen2.5:7b", "ollama", payload)
 
-            raw_text = resp.json()["choices"][0]["message"]["content"].strip()
-
-            # Check if JSON action was returned
-            action_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
-            if not action_match and raw_text.startswith("{") and raw_text.endswith("}"):
-                action_json_str = raw_text
-            elif action_match:
-                action_json_str = action_match.group(1)
-            else:
-                action_json_str = None
-
-            if action_json_str:
-                try:
-                    action_data = json.loads(action_json_str)
-                    action_name = action_data.get("action")
-                    args = action_data.get("arguments", {})
-                    logger.info(f"Executing skill: {action_name} with {args}")
-                    result = registry.execute(action_name, args)
-                    return result
-                except Exception as ex:
-                    logger.warning(f"Failed to parse skill JSON: {ex}")
-
-            return raw_text
-
-        except requests.exceptions.ConnectionError:
-            # Fallback if Ollama/LLM server is not launched
-            logger.warning("LLM server is offline. Using local rule-based fallback.")
+        # 3. Если сеть полностью отсутствует и LLM оффлайн — моментальный локальный парсер
+        if not success:
+            logger.info("All LLM endpoints offline. Executing offline rule-based fallback.")
             return self._fallback_rule_based(user_query)
-        except Exception as e:
-            logger.error(f"Brain exception: {e}")
-            return "Произошла ошибка при обработке запроса."
+
+        # Проверка и выполнение JSON действий
+        return self._execute_action_or_text(raw_text)
+
+    def _execute_action_or_text(self, raw_text: str) -> str:
+        action_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
+        if not action_match and raw_text.startswith("{") and raw_text.endswith("}"):
+            action_json_str = raw_text
+        elif action_match:
+            action_json_str = action_match.group(1)
+        else:
+            action_json_str = None
+
+        if action_json_str:
+            try:
+                action_data = json.loads(action_json_str)
+                action_name = action_data.get("action")
+                args = action_data.get("arguments", {})
+                logger.info(f"Executing skill: {action_name} with {args}")
+                result = registry.execute(action_name, args)
+                return result
+            except Exception as ex:
+                logger.warning(f"Failed to parse skill JSON: {ex}")
+
+        return raw_text
 
     def _fallback_rule_based(self, query: str) -> str:
-        """Simple rule fallback if local LLM is not running."""
+        """100% автономный офлайн-обработчик без LLM."""
         q = query.lower()
         if "время" in q or "который час" in q:
             return registry.execute("get_time", {})
         if "склад" in q or "найди" in q or "есть ли" in q:
-            # extract word
             words = [w for w in q.split() if len(w) > 3 and w not in ("найди", "есть", "склад", "наличии")]
             term = " ".join(words) if words else "esp32"
             return registry.execute("check_component", {"query": term})
+        if "статус" in q and ("гит" in q or "git" in q):
+            return registry.execute("git_status", {})
         if "телевизор" in q or "тв" in q:
             return registry.execute("tv_control", {"action": "power_toggle"})
-        return f"Запрос принят: '{query}', но сервер локальной нейросети пока не запущен."
+        return f"Запрос: '{query}'. Локальный интеллект выполнил базовую проверку."

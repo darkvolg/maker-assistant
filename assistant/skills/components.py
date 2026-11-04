@@ -1,26 +1,57 @@
 import os
 import json
+import shutil
+import threading
 from pathlib import Path
 from typing import Optional
 from assistant.skills.registry import registry
 
 DEFAULT_STORAGE_FILE = Path(__file__).resolve().parent.parent.parent / "examples" / "sklad_example.json"
+_storage_lock = threading.Lock()
 
-def _load_storage(filepath: Optional[str] = None):
+def _load_storage(filepath: Optional[str] = None) -> dict:
     p = Path(filepath) if filepath else DEFAULT_STORAGE_FILE
     if not p.exists():
         return {"components": []}
     try:
-        with open(p, "r", encoding="utf-8") as f:
-            return json.load(f)
+        with _storage_lock:
+            with open(p, "r", encoding="utf-8") as f:
+                return json.load(f)
     except Exception:
+        # Попытка восстановить из .bak резервной копии при сбое
+        bak_file = p.with_suffix(".json.bak")
+        if bak_file.exists():
+            try:
+                with open(bak_file, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
         return {"components": []}
 
-def _save_storage(data, filepath: Optional[str] = None):
+def _save_storage_atomic(data: dict, filepath: Optional[str] = None):
+    """Атомарное сохранение базы через .tmp файл с созданием .bak копии."""
     p = Path(filepath) if filepath else DEFAULT_STORAGE_FILE
     p.parent.mkdir(parents=True, exist_ok=True)
-    with open(p, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    
+    tmp_path = p.with_suffix(".json.tmp")
+    bak_path = p.with_suffix(".json.bak")
+
+    with _storage_lock:
+        # 1. Запись во временный файл
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+
+        # 2. Создание .bak резервной копии текущего файла
+        if p.exists():
+            try:
+                shutil.copy2(p, bak_path)
+            except Exception:
+                pass
+
+        # 3. Атомарная замена (atomic rename)
+        os.replace(tmp_path, p)
 
 @registry.register("check_component", "Найти радиодеталь на складе по названию или номиналу. Возвращает количество и место хранения.")
 def check_component(query: str) -> str:
@@ -56,7 +87,7 @@ def consume_component(query: str, count: int = 1, project: str = "текущий
                 return f"Недостаточно деталей '{item.get('name')}': в наличии только {current_qty} шт."
             item["qty"] = current_qty - count
             item["last_project"] = project
-            _save_storage(data)
+            _save_storage_atomic(data)
             return f"Списано {count} шт. '{item.get('name')}'. Осталось {item['qty']} шт. в {item.get('location')}."
 
     return f"Компонент '{query}' не найден для списания."

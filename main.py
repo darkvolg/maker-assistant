@@ -33,6 +33,7 @@ def chat(config_file: str = "config.yaml"):
     config = load_config(config_file)
     brain = Brain(config)
     tts = TextToSpeech(config)
+    assistant.skills.system_tools.set_tts_notifier(tts.speak)
 
     console.print(Panel.fit(
         "[bold green]Maker Assistant (Text Mode)[/bold green]\n"
@@ -83,6 +84,7 @@ def listen(config_file: str = "config.yaml"):
 
     stt = SpeechRecognizer(config)
     tts = TextToSpeech(config)
+    assistant.skills.system_tools.set_tts_notifier(tts.speak)
     brain = Brain(config)
     recorder = AudioRecorder(sample_rate=config.get("audio", {}).get("sample_rate", 16000))
     detector = WakeWordDetector(wake_word=wake_word)
