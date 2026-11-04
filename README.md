@@ -27,6 +27,7 @@ Other voice assistants (like `disler/always-on-ai-assistant`) charge monthly sub
 - 🧰 **Real Maker Skills:**
   - 📦 **Stock & Components Search:** "Do we have 10k 0805 resistors?" → *"Yes, 150 pcs in reel R-10K."*
   - 📝 **Live Component Consumption:** "Deduct 2 ESP32 modules for current project" → Auto-updates storage database.
+  - 🐙 **Hands-Free Git & GitHub:** "Commit and push with message 'Fixed ADC readings'" → Instant `git commit && git push`.
   - ⏱️ **Lab Timers:** PCB cooling, acid etching, curing timers.
   - 💡 **Smart Lab & Devices:** Home Assistant, Smart sockets, TV/monitor control.
 - 🔌 **Extensible in 5 Lines:** Adding a new skill takes one Python decorator.

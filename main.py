@@ -15,6 +15,7 @@ from assistant.utils.audio import AudioRecorder
 import assistant.skills.components
 import assistant.skills.smart_home
 import assistant.skills.system_tools
+import assistant.skills.github_tools
 
 app = typer.Typer(help="100% Local, Always-On Voice AI Assistant for Hardware Engineers & Makers")
 console = Console()
