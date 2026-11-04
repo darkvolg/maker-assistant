@@ -1,86 +1,85 @@
-import io
-import time
 import collections
 import logging
+import math
+import queue
+import time
+import threading
 import numpy as np
 import sounddevice as sd
+from scipy.signal import resample_poly
 from assistant.core.tts import is_speaking_event
 
-logger = logging.getLogger("maker_assistant.audio")
+logger = logging.getLogger(__name__)
+
+
+def resolve_input(device=None):
+    """Resolve a stable device name or an explicit PortAudio index."""
+    if isinstance(device, str):
+        matches = [i for i,d in enumerate(sd.query_devices())
+                   if d["max_input_channels"] and device.casefold() in d["name"].casefold()]
+        if len(matches) != 1:
+            raise ValueError(f"Микрофон '{device}': найдено {len(matches)} вариантов; выбери индекс через devices")
+        device = matches[0]
+    return device, sd.query_devices(device, "input")
+
 
 class AudioRecorder:
-    def __init__(self, sample_rate: int = 16000, channels: int = 1):
+    def __init__(self, sample_rate=16000, channels=1, device=None):
         self.sample_rate = sample_rate
         self.channels = channels
+        self.device = device
 
-    def record_until_silence(
-        self,
-        energy_threshold: float = 0.015,
-        silence_timeout: float = 1.2,
-        max_duration: float = 15.0,
-        pre_roll_seconds: float = 0.5
-    ) -> np.ndarray:
-        """
-        Записывает аудио с микрофона до наступления тишины либо достижения max_duration.
-        Устойчив к шуму фена/вытяжки и защищен от утечек памяти через ring buffer (deque).
-        """
-        chunk_size = int(self.sample_rate * 0.1)  # 100 мс порция
-        pre_roll_chunks = max(1, int(pre_roll_seconds / 0.1))
-        
-        # Кольцевой буфер фиксированного размера для предзаписи
-        pre_roll_buffer = collections.deque(maxlen=pre_roll_chunks)
-        recorded_chunks = []
-        
-        silence_start = None
-        start_time = time.time()
+    def record_until_silence(self, energy_threshold=0.015, silence_timeout=0.8,
+                             max_duration=15.0, pre_roll_seconds=0.5):
+        device, info = resolve_input(self.device)
+        rate = int(info["default_samplerate"])
+        chunks = queue.Queue(maxsize=32)
+        dropped = threading.Event()
+
+        def callback(indata, frames, timing, status):
+            if status.input_overflow:
+                dropped.set()
+            try:
+                chunks.put_nowait(indata[:,0].copy())
+            except queue.Full:
+                dropped.set()
+
+        pre = collections.deque(maxlen=max(1,int(pre_roll_seconds/0.1)))
+        recorded = []
         has_spoken = False
-
-        with sd.InputStream(samplerate=self.sample_rate, channels=self.channels, dtype="float32") as stream:
-            while True:
-                # Half-duplex защита: пока ассистент говорит, не пишем аудио
-                if is_speaking_event.is_set():
-                    time.sleep(0.05)
+        silence = 0.0
+        deadline = time.monotonic() + max_duration
+        with sd.InputStream(device=device, samplerate=rate, channels=1, dtype="float32",
+                            blocksize=int(rate*0.1), callback=callback):
+            while time.monotonic() < deadline:
+                try:
+                    chunk = chunks.get(timeout=0.25)
+                except queue.Empty:
                     continue
-
-                # exception_on_overflow=False предотвращает вылет при пиковой нагрузке на GPU
-                chunk, overflowed = stream.read(chunk_size)
+                if dropped.is_set():
+                    logger.warning("Audio overflow: dropping incomplete utterance")
+                    return np.array([],dtype=np.float32)
+                if is_speaking_event.is_set():
+                    pre.clear()
+                    recorded.clear()
+                    has_spoken = False
+                    silence = 0.0
+                    continue
                 energy = float(np.sqrt(np.mean(chunk**2)))
-
                 if not has_spoken:
-                    pre_roll_buffer.append(chunk)
+                    pre.append(chunk)
                     if energy > energy_threshold:
+                        recorded.extend(pre)
                         has_spoken = True
-                        recorded_chunks.extend(pre_roll_buffer)
-                        silence_start = None
                 else:
-                    recorded_chunks.append(chunk)
-                    if energy > energy_threshold:
-                        silence_start = None
-                    else:
-                        if silence_start is None:
-                            silence_start = time.time()
-                        elif time.time() - silence_start >= silence_timeout:
-                            break
-
-                # Жесткий лимит длительности команды (защита от шума вытяжки и OOM)
-                if time.time() - start_time > max_duration:
-                    logger.debug("Max recording duration reached.")
-                    break
-
-        if not recorded_chunks:
-            return np.array([], dtype=np.float32)
-
-        # Возвращаем 1D массив float32 без записи на диск
-        return np.concatenate(recorded_chunks, axis=0).flatten()
-
-    @staticmethod
-    def play_beep(freq: int = 880, duration: float = 0.08, sample_rate: int = 16000):
-        """Короткий приятный звуковой сигнал активации."""
-        t = np.linspace(0, duration, int(sample_rate * duration), False)
-        tone = np.sin(freq * t * 2 * np.pi) * 0.15
-        fade = int(sample_rate * 0.01)
-        if len(tone) > 2 * fade:
-            tone[:fade] *= np.linspace(0, 1, fade)
-            tone[-fade:] *= np.linspace(1, 0, fade)
-        sd.play(tone.astype(np.float32), samplerate=sample_rate)
-        sd.wait()
+                    recorded.append(chunk)
+                    silence = 0.0 if energy > energy_threshold else silence + len(chunk)/rate
+                    if silence >= silence_timeout:
+                        break
+        if not recorded:
+            return np.array([],dtype=np.float32)
+        audio = np.concatenate(recorded)
+        if rate != self.sample_rate:
+            divisor = math.gcd(rate,self.sample_rate)
+            audio = resample_poly(audio,self.sample_rate//divisor,rate//divisor)
+        return audio.astype(np.float32)

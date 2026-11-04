@@ -1,46 +1,47 @@
-# ==============================================================
-# Maker Assistant Configuration
-# ==============================================================
-
+# Portable defaults. Override this machine in ignored config.local.yaml.
 assistant:
-  name: "Джарвис"
-  wake_word: "джарвис"         # Слово активации (или "ada", "компьютер", "помощник")
-  language: "ru"               # "ru" or "en"
-  debug: true
+  name: Джарвис
+  wake_word: джарвис
+  wake_aliases: [джорвис, джервис]  # Common Whisper spellings
+  language: ru
 
 audio:
   sample_rate: 16000
-  channels: 1
-  energy_threshold: 0.015      # Порог тишины для детекции речи (VAD)
-  silence_timeout_sec: 1.2     # Сколько секунд тишины ждать для окончания фразы
+  input_device: null
+  energy_threshold: 0.015
+  silence_timeout_sec: 0.8
 
 stt:
-  engine: "faster-whisper"
-  model_size: "medium"         # "tiny", "base", "small", "medium", "large-v3"
-  device: "cuda"               # "cuda" (если есть NVIDIA GPU) или "cpu"
-  compute_type: "float16"      # "float16" для GPU, "int8" для CPU
-  beam_size: 5
+  model_size: small
+  device: cpu
+  compute_type: int8
+  beam_size: 3
+  local_files_only: true
 
 tts:
-  engine: "edge-tts"           # "edge-tts" (бесплатно, высокое качество) или "console"
-  voice: "ru-RU-DmitryNeural"  # или "ru-RU-SvetlanaNeural", "en-US-GuyNeural"
-  rate: "+10%"
-  volume: "+0%"
+  engine: sapi  # Windows offline. Other systems: edge-tts (online) or console.
+  sapi_voice: Irina
+  voice: ru-RU-DmitryNeural
+  rate: +10%
+  volume: +0%
 
 brain:
-  provider: "ollama"           # "ollama" (локально) | "deepseek" | "openai"
-  model: "qwen2.5:7b"          # или "deepseek-chat", "phi4", "llama3.2"
-  base_url: "http://localhost:11434/v1"
-  api_key: "ollama"            # или ваш токен в .env
-  temperature: 0.2
+  provider: ollama  # none: only deterministic offline commands
+  model: qwen2.5:7b-instruct
+  base_url: http://127.0.0.1:11434/v1
+  api_key: ollama
+  timeout_sec: 60
 
 skills:
   components:
     enabled: true
-    storage_path: "examples/sklad_example.json"
-  smart_home:
-    enabled: true
-    ha_url: ""
-    ha_token: ""
+    storage_path: data/inventory.sqlite3
   system_tools:
     enabled: true
+  smart_home:
+    enabled: false
+    ha_url: ""
+    allowed_entities: []
+  github_tools:
+    enabled: false
+    repo_path: .

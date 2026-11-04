@@ -15,7 +15,8 @@ is_speaking_event = threading.Event()
 class TextToSpeech:
     def __init__(self, config: Dict[str, Any]):
         tts_cfg = config.get("tts", {})
-        self.engine = tts_cfg.get("engine", "edge-tts")
+        self.engine = tts_cfg.get("engine", "sapi")
+        self.sapi_voice = tts_cfg.get("sapi_voice", "Irina")
         self.voice = tts_cfg.get("voice", "ru-RU-DmitryNeural")
         self.rate = tts_cfg.get("rate", "+10%")
         self.volume = tts_cfg.get("volume", "+0%")
@@ -46,22 +47,24 @@ class TextToSpeech:
         await asyncio.wait_for(communicate.save(output_path), timeout=3.0)
 
     def _speak_offline_sapi(self, text: str) -> bool:
-        """100% локальный офлайн-синтез через системный Windows SAPI5."""
+        """COM gets data directly: no shell interpolation or subprocess."""
         try:
+            import pythoncom
             import win32com.client
-            speaker = win32com.client.Dispatch("SAPI.SpVoice")
-            speaker.Speak(text)
-            return True
-        except Exception:
+            pythoncom.CoInitialize()
             try:
-                # Фоллбек через PowerShell SAPI
-                import subprocess
-                ps_cmd = f"Add-Type -AssemblyName System.speech; (New-Object System.Speech.Synthesis.SpeechSynthesizer).Speak('{text}')"
-                subprocess.run(["powershell", "-NoProfile", "-Command", ps_cmd], timeout=5, check=True)
+                speaker = win32com.client.Dispatch("SAPI.SpVoice")
+                voices = list(speaker.GetVoices())
+                matches = [v for v in voices if self.sapi_voice.lower() in v.GetDescription().lower()]
+                if matches:
+                    speaker.Voice = matches[0]
+                speaker.Speak(text, 16)  # SVSFIsNotXML: never interpret supplied text as markup.
                 return True
-            except Exception as e:
-                logger.error(f"Offline SAPI failed: {e}")
-                return False
+            finally:
+                pythoncom.CoUninitialize()
+        except Exception as exc:
+            logger.error("Local SAPI unavailable: %s", exc)
+            return False
 
     def _play_audio_file(self, file_path: str):
         """Проигрывает аудио и гарантирует выгрузку дескриптора на Windows."""
@@ -93,7 +96,7 @@ class TextToSpeech:
             played = False
 
             # Попытка Edge-TTS с таймаутом 3.0 сек
-            if self.engine != "console":
+            if self.engine == "edge-tts":
                 try:
                     with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
                         temp_filename = f.name
@@ -129,6 +132,8 @@ class TextToSpeech:
         while True:
             text = self._speech_queue.get()
             try:
+                if text is None:
+                    return
                 self._process_single_utterance(text)
             except Exception as e:
                 logger.error(f"Error in TTS worker: {e}")
@@ -139,3 +144,11 @@ class TextToSpeech:
         """Публичный неблокирующий метод добавления фразы в очередь речи."""
         if text:
             self._speech_queue.put(text)
+
+    def wait(self):
+        self._speech_queue.join()
+
+    def close(self):
+        self.wait()
+        self._speech_queue.put(None)
+        self._worker_thread.join(timeout=5)

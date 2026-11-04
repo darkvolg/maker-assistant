@@ -1,133 +1,120 @@
+"""Local commands first; LLM for flexible language and conversation."""
 import json
-import logging
 import re
+import time
 import requests
-from typing import Dict, Any, Tuple
 from assistant.skills.registry import registry
 
-logger = logging.getLogger("maker_assistant.brain")
+NUMBERS = {"один":1,"одну":1,"одна":1,"два":2,"две":2,"три":3,"четыре":4,"пять":5,"десять":10}
 
-SYSTEM_PROMPT_TEMPLATE = """Ты — голосовой ассистент инженера и мейкера на рабочем месте.
-Твоя задача — помогать инженеру, пока его руки заняты работой.
-Отвечай кратко, емко, естественным разговорным языком (без таблиц и сложных символов), так как твой ответ будет озвучен через динамики.
-
-У тебя есть доступ к следующим инструментам:
-{skills}
-
-Если запрос требует действия (проверить склад, списать деталь, включить свет, поставить таймер и т.д.), верни JSON строго в таком формате:
-```json
-{{
-  "action": "<название_инструмента>",
-  "arguments": {{
-    "<параметр>": "<значение>"
-  }},
-  "thought": "<краткое пояснение>"
-}}
-```
-
-Если действие не требуется или это просто вопрос/диалог, верни ответ простым текстом без JSON блока.
-"""
 
 class Brain:
-    def __init__(self, config: Dict[str, Any]):
-        brain_cfg = config.get("brain", {})
-        self.provider = brain_cfg.get("provider", "ollama")
-        self.model = brain_cfg.get("model", "qwen2.5:7b")
-        self.base_url = brain_cfg.get("base_url", "http://localhost:11434/v1")
-        self.api_key = brain_cfg.get("api_key", "ollama")
-        self.temperature = brain_cfg.get("temperature", 0.2)
-        
-        # Резервный локальный Ollama URL на случай сбоя облака
-        self.local_ollama_url = "http://127.0.0.1:11434/v1"
+    def __init__(self, config):
+        cfg = config.get("brain", {})
+        self.provider = cfg.get("provider", "ollama")
+        self.model = cfg.get("model", "qwen2.5:7b-instruct")
+        self.base_url = cfg.get("base_url", "http://127.0.0.1:11434/v1")
+        self.api_key = cfg.get("api_key", "ollama")
+        self.timeout = cfg.get("timeout_sec", 60)
+        self.history = []
+        self.pending = None
+        self.confirm_seconds = 45
 
-    def _call_llm_api(self, base_url: str, model: str, api_key: str, payload: dict) -> Tuple[bool, str]:
-        """Вызывает LLM endpoint с жесткими таймаутами (2.0 сек подключение, 8.0 сек ответ)."""
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {api_key}"
-        }
-        endpoint = f"{base_url.rstrip('/')}/chat/completions"
+    def _action(self, name, args):
         try:
-            resp = requests.post(endpoint, json=payload, headers=headers, timeout=(2.0, 8.0))
-            if resp.status_code == 200:
-                raw_text = resp.json()["choices"][0]["message"]["content"].strip()
-                return True, raw_text
-            else:
-                logger.warning(f"LLM API returned status {resp.status_code} at {endpoint}")
-                return False, f"API Error: {resp.status_code}"
-        except Exception as e:
-            logger.warning(f"Connection failed to {endpoint}: {e}")
-            return False, str(e)
+            args = registry.validate(name, args)
+            if registry.is_mutating(name):
+                self.pending = (name, args, time.monotonic())
+                labels = {"consume_component":"Списать детали", "undo_consumption":"Вернуть последнее списание",
+                          "ha_turn_on":"Включить устройство", "ha_turn_off":"Выключить устройство",
+                          "git_commit_push":"Закоммитить и отправить подготовленные изменения", "create_github_issue":"Создать задачу GitHub"}
+                fields = {"query":"деталь", "count":"количество", "project":"проект", "entity_id":"устройство", "message":"сообщение", "title":"заголовок", "body":"описание"}
+                details = ", ".join(f"{fields.get(k,k)}: {v}" for k,v in args.items() if v != "")
+                summary = labels.get(name, name) + "." + (" " + details + "." if details else "")
+                return f"{summary} Подтверди: «подтверждаю», или скажи «отмена»."
+            return registry.execute(name, args)
+        except (ValueError, TypeError) as exc:
+            return f"Действие не выполнено: {exc}"
 
-    def process(self, user_query: str) -> str:
-        """
-        Обрабатывает запрос с каскадом отказоустойчивости:
-        1. Основной провайдер (Cloud/Ollama) ->
-        2. Резервный локальный Ollama ->
-        3. Локальные rule-based навыки без сети.
-        """
-        skills_doc = registry.get_skill_descriptions()
-        system_prompt = SYSTEM_PROMPT_TEMPLATE.format(skills=skills_doc)
+    def process(self, query):
+        query = query.strip()
+        q = query.lower().strip(" .!?")
+        if self.pending and time.monotonic() - self.pending[2] > self.confirm_seconds:
+            self.pending = None
+        if q in ("подтверждаю", "подтвердить", "confirm"):
+            if not self.pending:
+                return "Нет команды для подтверждения. Повтори запрос."
+            name, args, _ = self.pending
+            self.pending = None
+            result = registry.execute(name, args)
+            self.history.extend([{"role":"user","content":query},{"role":"assistant","content":result}])
+            self.history = self.history[-12:]
+            return result
+        if q in ("отмена", "cancel", "нет"):
+            self.pending = None
+            return "Ожидающая команда отменена."
+        # Any new request supersedes the previous pending action.
+        self.pending = None
+        result = self._local(q)
+        if result is None:
+            result = self._ask_model(query)
+        self.history.extend([{"role":"user","content":query},{"role":"assistant","content":result}])
+        self.history = self.history[-12:]
+        return result
 
-        payload = {
-            "model": self.model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_query}
-            ],
-            "temperature": self.temperature
-        }
+    def _local(self, q):
+        if q in ("отмени", "отмени списание", "верни последнее списание", "undo"):
+            return self._action("undo_consumption", {})
+        if q in ("который час", "сколько времени", "время", "what time is it"):
+            return self._action("get_time", {})
+        if q in ("статус git", "git status", "статус гит"):
+            return self._action("git_status", {})
+        search = re.match(r"^(?:где|найди|есть ли|проверь склад|find)\s+(.+)$", q)
+        if search:
+            term = re.sub(r"\b(?:у нас|на складе|в наличии)\b", "", search[1]).strip()
+            return self._action("check_component", {"query":term})
+        consumption = re.match(r"^(?:спиши|взял|взяла|возьми|consume)\s+(-?\d+|один|одну|одна|два|две|три|четыре|пять|десять)\b(.*)$", q)
+        if consumption:
+            n = consumption[1]
+            count = NUMBERS[n] if n in NUMBERS else int(n)
+            if count <= 0:
+                return "Количество должно быть положительным целым числом."
+            term = re.sub(r"^\s*(?:штук[аи]?|шт\.?|детал[ьи])\b", "", consumption[2]).strip()
+            parts = re.split(r"\s+для проекта\s+", term, maxsplit=1)
+            return self._action("consume_component", {"query":parts[0], "count":count,
+                "project":parts[1] if len(parts)>1 else "текущий проект"})
+        timer = re.match(r"^(?:поставь\s+)?таймер(?:\s+на)?\s+(\d+)\s*(секунд\w*|минут\w*|час\w*)(?:\s+(.+))?$", q)
+        if timer:
+            mult = 60 if timer[2].startswith("мин") else 3600 if timer[2].startswith("час") else 1
+            return self._action("set_timer", {"seconds":int(timer[1])*mult, "message":timer[3] or "Время вышло"})
+        return None
 
-        # 1. Попытка через основной настроенный провайдер
-        success, raw_text = self._call_llm_api(self.base_url, self.model, self.api_key, payload)
-
-        # 2. Если основной провайдер (например, облачный DeepSeek) упал, пробуем локальный Ollama
-        if not success and self.provider != "ollama":
-            logger.info("Cloud LLM unavailable. Falling back to local Ollama instance...")
-            payload["model"] = "qwen2.5:7b"  # Дефолтная локальная модель
-            success, raw_text = self._call_llm_api(self.local_ollama_url, "qwen2.5:7b", "ollama", payload)
-
-        # 3. Если сеть полностью отсутствует и LLM оффлайн — моментальный локальный парсер
-        if not success:
-            logger.info("All LLM endpoints offline. Executing offline rule-based fallback.")
-            return self._fallback_rule_based(user_query)
-
-        # Проверка и выполнение JSON действий
-        return self._execute_action_or_text(raw_text)
-
-    def _execute_action_or_text(self, raw_text: str) -> str:
-        action_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw_text, re.DOTALL)
-        if not action_match and raw_text.startswith("{") and raw_text.endswith("}"):
-            action_json_str = raw_text
-        elif action_match:
-            action_json_str = action_match.group(1)
-        else:
-            action_json_str = None
-
-        if action_json_str:
+    def _ask_model(self, query):
+        if self.provider == "none":
+            return "Команда не распознана. Примеры: «найди ESP32», «взял 2», «таймер на 5 минут»."
+        prompt = ("Ты помощник в мастерской. Отвечай кратко на языке пользователя. "
+            "Не утверждай, что действие выполнено: для действий возвращай только JSON "
+            '{"action":"имя","arguments":{}}. Для обычного вопроса верни текст. '
+            "Не выдумывай устройства и остатки. Если данных недостаточно, уточни. "
+            "Не вызывай действие, если пользователь лишь обсуждает его или просит объяснить. "
+            "Доступные инструменты:\n" + registry.get_skill_descriptions())
+        payload = {"model":self.model, "messages":[{"role":"system","content":prompt},
+                   *self.history, {"role":"user","content":query}], "temperature":0.1, "max_tokens":256}
+        try:
+            resp = requests.post(self.base_url.rstrip("/")+"/chat/completions", json=payload,
+                headers={"Authorization":f"Bearer {self.api_key}"}, timeout=(3,self.timeout))
+            resp.raise_for_status()
+            text = resp.json()["choices"][0]["message"]["content"].strip()
+        except (requests.RequestException, KeyError, TypeError, ValueError):
+            return "Модель недоступна. Базовые команды склада, времени и таймеров продолжают работать. Проверь doctor."
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
+        candidate = re.sub(r"^```(?:json)?\s*|\s*```$", "", text).strip()
+        if candidate.startswith("{"):
             try:
-                action_data = json.loads(action_json_str)
-                action_name = action_data.get("action")
-                args = action_data.get("arguments", {})
-                logger.info(f"Executing skill: {action_name} with {args}")
-                result = registry.execute(action_name, args)
-                return result
-            except Exception as ex:
-                logger.warning(f"Failed to parse skill JSON: {ex}")
-
-        return raw_text
-
-    def _fallback_rule_based(self, query: str) -> str:
-        """100% автономный офлайн-обработчик без LLM."""
-        q = query.lower()
-        if "время" in q or "который час" in q:
-            return registry.execute("get_time", {})
-        if "склад" in q or "найди" in q or "есть ли" in q:
-            words = [w for w in q.split() if len(w) > 3 and w not in ("найди", "есть", "склад", "наличии")]
-            term = " ".join(words) if words else "esp32"
-            return registry.execute("check_component", {"query": term})
-        if "статус" in q and ("гит" in q or "git" in q):
-            return registry.execute("git_status", {})
-        if "телевизор" in q or "тв" in q:
-            return registry.execute("tv_control", {"action": "power_toggle"})
-        return f"Запрос: '{query}'. Локальный интеллект выполнил базовую проверку."
+                data = json.loads(candidate)
+                if not isinstance(data, dict) or set(data) - {"action","arguments","thought"}:
+                    raise ValueError()
+                return self._action(data["action"], data.get("arguments",{}))
+            except (ValueError, TypeError, KeyError):
+                return "Модель вернула некорректную команду; ничего не выполнено. Повтори запрос."
+        return text or "Модель вернула пустой ответ."

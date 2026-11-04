@@ -1,62 +1,46 @@
 import inspect
-import json
-import logging
-from typing import Callable, Dict, Any, List
-
-logger = logging.getLogger("maker_assistant.skills")
 
 class SkillRegistry:
     def __init__(self):
-        self._skills: Dict[str, Dict[str, Any]] = {}
+        self._skills = {}
+        self.disabled = set()
 
-    def register(self, name: str, description: str):
-        """Decorator to register an action skill."""
-        def decorator(func: Callable):
-            sig = inspect.signature(func)
-            params = {}
-            for p_name, param in sig.parameters.items():
-                if p_name in ("self", "ctx"):
-                    continue
-                p_type = "string"
-                if param.annotation == int:
-                    p_type = "integer"
-                elif param.annotation == float:
-                    p_type = "number"
-                elif param.annotation == bool:
-                    p_type = "boolean"
-                params[p_name] = {
-                    "type": p_type,
-                    "default": None if param.default == inspect.Parameter.empty else param.default
-                }
-
-            self._skills[name] = {
-                "name": name,
-                "description": description,
-                "parameters": params,
-                "func": func
-            }
+    def register(self, name, description, mutating=False):
+        def decorator(func):
+            self._skills[name] = dict(func=func, description=description, mutating=mutating)
             return func
         return decorator
 
-    def get_skill_descriptions(self) -> str:
-        """Returns clean description of all registered skills for the LLM prompt."""
-        lines = []
-        for name, meta in self._skills.items():
-            params_str = ", ".join([f"{k}: {v['type']}" for k, v in meta["parameters"].items()])
-            lines.append(f"- {name}({params_str}): {meta['description']}")
-        return "\n".join(lines)
+    def configure(self, config):
+        self.disabled = {name for name, meta in self._skills.items()
+            if not config.get("skills", {}).get(meta["func"].__module__.split(".")[-1], {}).get("enabled", True)}
 
-    def execute(self, action_name: str, arguments: Dict[str, Any]) -> str:
-        if action_name not in self._skills:
-            return f"Error: Unknown action '{action_name}'"
+    def validate(self, name, arguments):
+        if name not in self._skills or name in self.disabled:
+            raise ValueError(f"Навык недоступен: {name}")
+        if not isinstance(arguments, dict):
+            raise ValueError("Аргументы должны быть объектом")
+        sig = inspect.signature(self._skills[name]["func"])
+        bound = sig.bind(**arguments)
+        bound.apply_defaults()
+        for key, value in bound.arguments.items():
+            expected = sig.parameters[key].annotation
+            if expected in (str, int, bool, float) and type(value) is not expected:
+                raise ValueError(f"Неверный тип параметра {key}")
+        return dict(bound.arguments)
 
-        func = self._skills[action_name]["func"]
+    def get_skill_descriptions(self):
+        return "\n".join(f"- {name}{inspect.signature(m['func'])}: {m['description']}"
+                         for name, m in self._skills.items() if name not in self.disabled)
+
+    def is_mutating(self, name):
+        return self._skills[name]["mutating"]
+
+    def execute(self, name, arguments):
         try:
-            result = func(**arguments)
-            return str(result)
-        except Exception as e:
-            logger.error(f"Error executing {action_name}: {e}")
-            return f"Execution error: {e}"
-
+            args = self.validate(name, arguments)
+            return str(self._skills[name]["func"](**args))
+        except Exception as exc:
+            return f"Действие не выполнено: {exc}"
 
 registry = SkillRegistry()

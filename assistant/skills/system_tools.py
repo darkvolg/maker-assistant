@@ -22,6 +22,12 @@ def get_time() -> str:
 
 @registry.register("set_timer", "Поставить таймер в секундах или минутах с напоминанием (охлаждение платы, травление).")
 def set_timer(seconds: int, message: str = "Время вышло") -> str:
+    if type(seconds) is not int or not 1 <= seconds <= 86400:
+        raise ValueError("Таймер: от 1 до 86400 секунд")
+    _active_timers[:] = [t for t in _active_timers if t.is_alive()]
+    if len(_active_timers) >= 20:
+        return "Уже запущено 20 таймеров."
+
     def _timer_worker():
         time.sleep(seconds)
         alert_text = f"Внимание! Таймер сработал: {message}."

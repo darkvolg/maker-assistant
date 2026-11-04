@@ -20,3 +20,17 @@ models/
 # OS
 .DS_Store
 Thumbs.db
+
+# Private configuration and inventory
+config.local.yaml
+data/
+*.sqlite3*
+*.json.bak
+*.json.tmp
+.pytest_cache/
+build/
+dist/
+*.egg-info/
+
+# Local machine report
+Проверка и запуск.html
