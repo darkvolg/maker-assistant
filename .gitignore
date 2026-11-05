@@ -23,6 +23,7 @@ Thumbs.db
 
 # Private configuration and inventory
 config.local.yaml
+config.*.local.yaml
 data/
 *.sqlite3*
 *.json.bak

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Maker Assistant — пост и материалы</title>
+<style>body{font:17px/1.6 system-ui,sans-serif;background:#111a24;color:#e8edf1;max-width:900px;margin:40px auto;padding:0 22px}h1,h2{line-height:1.2}a{color:#9aebce}img{max-width:100%;border-radius:16px}section{margin:30px 0;padding:24px;background:#1b2937;border-radius:16px}textarea{box-sizing:border-box;width:100%;min-height:470px;background:#0e1620;color:#e8edf1;border:1px solid #657384;border-radius:8px;padding:16px;font:16px/1.5 system-ui}button{background:#9aebce;color:#10251e;padding:10px 18px;border:0;border-radius:8px;font:inherit;cursor:pointer}small{color:#bdc9d1}code{overflow-wrap:anywhere}</style>
+<h1>Maker Assistant: первая публикация</h1>
+<p>Цель — найти 2–3 человека, которым действительно нужен голосовой учёт радиодеталей. Один пост, затем две недели обратной связи. Количество звёзд само по себе не доказывает полезность.</p>
+<p><strong>Статус: подготовлено, на Reddit не опубликовано.</strong> Требуется доступ к аккаунту Reddit. Из этой страницы ничего не отправляется автоматически.</p>
+<img src="assets/social-card.png" alt="Иллюстрация мастерской Maker Assistant, не снимок работающего приложения">
+<p><a href="assets/social-card.png" download>Скачать картинку</a> · <a href="assets/social-card-prompt.txt">Промпт картинки</a> · <a href="https://github.com/darkvolg/maker-assistant">Репозиторий</a></p>
+<section><h2>Куда разместить</h2>
+<p>Первый вариант — <a href="https://www.reddit.com/r/SideProject/">r/SideProject</a>. Это сообщество для представления своих проектов. В доступном <a href="https://www.reddit.com/r/SideProject/about/rules.json">списке правил</a> отдельные правила сообщества не перечислены; общие ограничения Reddit на спам действуют. Перед отправкой проверить актуальные правила и закреплённые темы. Один содержательный пост со ссылкой на исходники.</p>
+<p>r/LocalLLaMA пока не использовать: <a href="https://old.reddit.com/r/LocalLLaMA/about/rules/">правила</a> ограничивают преимущественно ИИ-созданные тексты и код. r/opensource также не подходит: <a href="https://danb.me/blog/opensource-sub-rules/">объяснение изменений правил</a>. Не нужно массово дублировать публикацию в нескольких сообществах.</p>
+<p>Ссылку на GitHub оставить в самом тексте. Иллюстрация необязательна; в обсуждении полезнее реальные результаты испытаний. Не выдавать её за скриншот программы.</p></section>
+<section><h2>Английский пост</h2>
+<p><strong>Заголовок:</strong> I built a local voice tool for electronics inventory. Would you use it at your bench?</p>
+<button onclick="copyPost()">Скопировать текст</button> <span id="copy-status" role="status"></span>
+<textarea id="post" aria-label="Текст английского поста" readonly>I'm an automation engineer who also works on electronics projects at home. I'm building Maker Assistant with AI coding help, and I want to find out whether the idea is useful beyond my own setup.
+
+The idea is simple: ask where a component is, record how many you take, and set a timer while your hands are busy.
+
+The current prototype supports this flow:
+"Jarvis, find ten k resistors" → "Jarvis, take four" → "Jarvis, confirm".
+You can undo the consumption, also with confirmation. Stock and its journal live in SQLite.
+
+Speech recognition uses faster-whisper. On Windows, SAPI handles offline speech output. Ollama with Qwen handles flexible requests and conversation; the basic inventory and timer commands do not need an LLM. English and Russian have separate profiles. The local configuration needs no paid API, but initial setup downloads dependencies and models. An optional online voice mode is clearly separate.
+
+This was inspired by disler/always-on-ai-assistant. My focus is the small workbench workflow: component search, consumption, confirmation and undo. I am not claiming it replaces a mature inventory system or a general voice assistant.
+
+Testing so far: 56 automated tests passed locally, plus two opt-in speech tests using real Whisper on synthesized English and Russian phrases. In each speech test, sample stock went from 150 to 146 and back to 150. This is not a test of human accents or workshop noise. Setup is still manual, Windows is the main voice target, and some diagnostics and settings remain in Russian.
+
+Source and English setup: https://github.com/darkvolg/maker-assistant
+License: MIT. Early prototype, free to try.
+
+If you keep drawers of electronic parts, would voice entry actually save you time? What would make this inconvenient at your bench? I'd like a couple of people to try the workflow and report what fails before I add more features.
+
+Disclosure: I used AI coding assistance and AI help to write this English post from my Russian notes. The accompanying artwork, if shown, is AI-generated concept art, not a screenshot.</textarea></section>
+<section><h2>Русский перевод</h2>
+<p>Я инженер по автоматизации, дома занимаюсь электроникой. Делаю Maker Assistant с помощью ИИ и хочу понять, полезна ли идея кому-то, кроме меня.</p>
+<p>Идея простая: голосом узнать, где лежит деталь, записать расход и поставить таймер, пока руки заняты. Сейчас можно найти резисторы, сказать «взял четыре», подтвердить списание и затем отменить его. Остатки и журнал хранятся в SQLite.</p>
+<p>Распознавание — faster-whisper, локальная озвучка Windows — SAPI. Ollama с Qwen отвечает за свободные запросы и разговор; базовым командам модель не нужна. Есть отдельные английский и русский профили. Для локальной работы платный API не нужен; первая установка требует скачивания зависимостей и моделей. Интернет-озвучка — отдельная опция.</p>
+<p>Вдохновлялся always-on-ai-assistant от disler. Здесь упор на поиск деталей, расход, подтверждение и отмену. Не заявляю замену полноценного складского учёта или универсального помощника.</p>
+<p>Локально прошли 56 автоматических тестов и два голосовых теста: настоящая Whisper распознала синтезированные русские и английские фразы. Остаток в каждом тесте изменился 150 → 146 → 150. Это ещё не проверка человеческой речи, акцентов и шума. Установка пока ручная, голосовой режим прежде всего для Windows, часть диагностики и настроек на русском.</p>
+<p>Исходники открыты под MIT. Если у вас есть ящики с радиодеталями: сэкономил бы голос время? Что мешало бы пользоваться этим за вашим столом? Хочу найти несколько человек для испытаний до добавления новых функций.</p>
+<p>Открыто указываем: код и английский текст подготовлены с помощью ИИ, картинка — сгенерированная иллюстрация.</p></section>
+<section><h2>Как проверить у себя</h2>
+<p>Английский запуск: <code>run-english.bat</code>. Демонстрационный склад импортируется отдельно командой из английского README. Русский запуск: прежний <code>run.bat</code>. Русский склад и настройки не заменяются.</p>
+<p>Для будущего видео: записать настоящий экран с поиском, подтверждением списания и отменой. Обозначить демонстрационный склад. Сгенерированное видео не использовать как доказательство работы.</p>
+<p>После публикации записать ссылку и дату. Через две недели оценить: кто установил, кто повторил сценарий, какие ошибки нашёл, хочет ли использовать дальше. Если никто не попробовал — не расширять проект автоматически.</p></section>
+<script>async function copyPost(){const el=document.getElementById('post');el.focus();el.select();try{await navigator.clipboard.writeText(el.value);document.getElementById('copy-status').textContent='Скопировано';}catch{document.getElementById('copy-status').textContent='Текст выделен. Нажми Ctrl+C.';}}</script>
+</html>

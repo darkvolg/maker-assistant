@@ -1,0 +1,9 @@
+{
+  "components": [
+    {"name": "ESP32-WROOM-32", "category": "Microcontrollers", "package": "Module", "qty": 5, "location": "Drawer A-12"},
+    {"name": "10k resistor", "category": "Resistors", "package": "SMD 0805", "qty": 150, "location": "Reel R-10K"},
+    {"name": "4.7k resistor", "category": "Resistors", "package": "SMD 0805", "qty": 80, "location": "Reel R-4K7"},
+    {"name": "BME280 sensor", "category": "Sensors", "package": "I2C module", "qty": 3, "location": "Drawer B-04"},
+    {"name": "WS2812B 5V LED strip", "category": "LED", "package": "60 led/m", "qty": 2, "location": "LED box 2"}
+  ]
+}

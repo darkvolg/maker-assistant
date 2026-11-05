@@ -1,4 +1,5 @@
 import inspect
+from assistant.i18n import tr
 
 class SkillRegistry:
     def __init__(self):
@@ -17,16 +18,16 @@ class SkillRegistry:
 
     def validate(self, name, arguments):
         if name not in self._skills or name in self.disabled:
-            raise ValueError(f"Навык недоступен: {name}")
+            raise ValueError(tr(f"Навык недоступен: {name}", f"Skill unavailable: {name}"))
         if not isinstance(arguments, dict):
-            raise ValueError("Аргументы должны быть объектом")
+            raise ValueError(tr("Аргументы должны быть объектом", "Arguments must be an object"))
         sig = inspect.signature(self._skills[name]["func"])
         bound = sig.bind(**arguments)
         bound.apply_defaults()
         for key, value in bound.arguments.items():
             expected = sig.parameters[key].annotation
             if expected in (str, int, bool, float) and type(value) is not expected:
-                raise ValueError(f"Неверный тип параметра {key}")
+                raise ValueError(tr(f"Неверный тип параметра {key}", f"Invalid type for parameter {key}"))
         return dict(bound.arguments)
 
     def get_skill_descriptions(self):
@@ -41,6 +42,6 @@ class SkillRegistry:
             args = self.validate(name, arguments)
             return str(self._skills[name]["func"](**args))
         except Exception as exc:
-            return f"Действие не выполнено: {exc}"
+            return tr(f"Действие не выполнено: {exc}", f"Action failed: {exc}")
 
 registry = SkillRegistry()

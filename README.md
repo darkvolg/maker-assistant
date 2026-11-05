@@ -1,144 +1,136 @@
-<p align="center"><img src="assets/banner.png" alt="Maker Assistant — voice assistant for an electronics workbench" width="100%"></p>
+<p align="center"><img src="assets/banner.png" alt="Maker Assistant — voice tools for an electronics workbench" width="100%"></p>
 
 # Maker Assistant
 
-**Голосовой помощник для мастерской: найти деталь, записать расход, поставить таймер.**
+**Find components, record what you take, and set timers by voice.**
 
-Hands-free electronics inventory, timers and optional Home Assistant / Git integrations.
-Local speech recognition with faster-whisper; offline Windows speech with SAPI; optional Ollama conversation.
+English · [Русский](README.ru.md)
 
 [![Tests](https://github.com/darkvolg/maker-assistant/actions/workflows/tests.yml/badge.svg)](https://github.com/darkvolg/maker-assistant/actions/workflows/tests.yml)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-**Статус: 0.2, ранняя версия для испытаний в мастерской.** Основной сценарий и Windows-окружение проверены локально. Работа в шуме, разные микрофоны и другие ОС требуют полевых проверок. Нет обещания универсальной точности или секундной установки.
+An early electronics workbench prototype, built with AI assistance. Local speech recognition with faster-whisper, offline Windows speech with SAPI, SQLite inventory, and optional conversation through Ollama. No account or paid API is required for the local configuration. Initial dependency and model downloads require internet.
 
-## Что работает
+**Looking for people willing to try it at a real bench.** Microphone quality, accents and workshop noise still need field testing. This is not a general-purpose autonomous assistant or a complete inventory management system.
 
-- Поиск деталей по названию, номиналу и корпусу: `10k 0805` и `10 кОм 0805`.
-- SQLite-склад, проверка остатка, журнал списаний и отмена. Пример JSON не изменяется.
-- Контекст выбранной детали: «найди ESP32» → «взял два» → «подтверждаю».
-- Таймеры с голосовым уведомлением, время и дата.
-- Голосовая команда целиком: «Джарвис, найди ESP32». Можно назвать имя отдельно и произнести команду после ответа «Слушаю».
-- Выбор текущего микрофона Windows или конкретного устройства, включая Fifine и удалённый рабочий стол.
-- Опционально: включение / выключение разрешённых устройств Home Assistant; Git status, commit подготовленных файлов + push, создание Issue.
+## What it does
 
-Изменение склада, устройства, commit/push и Issue сначала предлагаются к подтверждению. «Подтверждаю» выполняет одну ожидающую команду, «отмена» отменяет её. Подтверждение истекает через 45 секунд; новый запрос заменяет предыдущую команду. В голосовом режиме каждую фразу начинайте с имени ассистента.
+- Search by component name, value and package, including `10k 0805`.
+- Keep quantities and a consumption journal in SQLite. Confirm before changing stock; undo the last consumption.
+- Remember the last uniquely selected component: `find ESP32` → `take two` → `confirm`.
+- Announce timers and the current time.
+- Recognize English or Russian, using separate configuration profiles.
+- Optionally control allowlisted Home Assistant entities or use Git/GitHub tools. These are disabled by default and are not fully localized into English.
 
-## Быстрый запуск на Windows
+Basic commands use deterministic handlers and work without an LLM. Flexible requests go to the configured model; tool calls are validated and changes require confirmation. The model can still misunderstand a request. It is never the inventory database.
 
-Нужны Python 3.10+, микрофон и, для свободного диалога, [Ollama](https://ollama.com/).
-Первичная установка зависимостей и моделей требует интернета. NVIDIA необязательна.
+## English quick start — Windows
+
+Install Python 3.10+ and optionally [Ollama](https://ollama.com/) for conversation. A microphone and an installed English Windows SAPI voice are needed for voice mode. The English profile selects **Microsoft David**; choose another installed English voice if needed. An NVIDIA GPU is optional.
 
 ```powershell
 git clone https://github.com/darkvolg/maker-assistant.git
 cd maker-assistant
 python -m venv .venv
 .venv\Scripts\python.exe -m pip install -e .
-.venv\Scripts\python.exe main.py download-model
+.venv\Scripts\python.exe main.py download-model --config-file config.en.yaml
 ollama pull qwen2.5:7b-instruct
-.venv\Scripts\python.exe main.py import-inventory examples/sklad_example.json
-.venv\Scripts\python.exe main.py doctor --audio-test --stt-test
-.venv\Scripts\python.exe main.py chat
+.venv\Scripts\python.exe main.py import-inventory examples/inventory.en.json --config-file config.en.yaml
+.venv\Scripts\python.exe main.py doctor --config-file config.en.yaml --audio-test --stt-test
+.venv\Scripts\python.exe main.py chat --config-file config.en.yaml
 ```
 
-Импорт выше создаёт **демонстрационный** склад из пяти позиций, а не проверяет ваши реальные запасы. Для своего склада подготовьте JSON по примеру и импортируйте в пустую базу, задав другой `storage_path`. Повторный импорт в заполненную базу отклоняется.
+The import creates **sample stock**, not a record of your actual parts. Import your own JSON into an empty database using the same format. Importing into an occupied database is refused.
 
-После установки откройте `run.bat`: голос, чат, диагностика, обновление зависимостей или импорт примера. Пункт 1 использует текущий микрофон Windows, пункт 6 — Fifine.
+Then open **`run-english.bat`**, or run:
 
 ```powershell
-.venv\Scripts\python.exe main.py listen
-.venv\Scripts\python.exe main.py listen --microphone fifine
-.venv\Scripts\python.exe main.py devices
-.venv\Scripts\python.exe main.py test-voice
-.venv\Scripts\python.exe main.py chat --mute
+.venv\Scripts\python.exe main.py listen --config-file config.en.yaml
 ```
 
-Можно указать индекс из `devices`: `listen --microphone 12`. Индексы меняются при переподключении, поэтому имя предпочтительнее. Озвучка использует текущий выход Windows; в удалённой сессии настройте перенаправление микрофона и динамиков в RDP.
+For deterministic commands without Ollama, set `brain.provider: none` in your local profile and skip `ollama pull`. Qwen is already multilingual; switching language does not require downloading a separate English LLM.
 
-## Пример разговора
+## Example
+
+Say the wake word before **every** command, including confirmation:
 
 ```text
-Вы: Джарвис, найди резисторы 10 кОм 0805.
-Ассистент: Резистор 10 кОм (SMD 0805): 150 шт., Лента R-10K ...
-Вы: Джарвис, взял четыре.
-Ассистент: Списать детали. Количество: 4 ... Подтверди ...
-Вы: Джарвис, подтверждаю.
-Ассистент: Списано 4 шт. Резистор 10 кОм. Осталось 146.
-Вы: Джарвис, отмени.
-Ассистент: Вернуть последнее списание ... Подтверди ...
-Вы: Джарвис, подтверждаю.
-Ассистент: Списание отменено. Возвращено 4 шт.
+You: Jarvis, find ten k resistors.
+Assistant: 10k resistor (SMD 0805): 150 pcs, Reel R-10K.
+You: Jarvis, take four.
+Assistant: Take components. count: 4, project: current project. Say "confirm" to proceed or "cancel" to stop.
+You: Jarvis, confirm.
+Assistant: Taken 4 pcs of 10k resistor. Remaining: 146.
+You: Jarvis, undo.
+Assistant: Undo the last consumption. Say "confirm" to proceed or "cancel" to stop.
+You: Jarvis, confirm.
+Assistant: Consumption undone. Restored 4 pcs.
 ```
 
-Точные базовые команды работают без LLM и без сети: «найди ESP32», «взял два», «спиши 2 ESP32», «который час», «таймер на 5 минут», «отмени». Свободные формулировки и разговор требуют доступной модели. Простой парсер ориентирован на русский язык; полноценная поддержка английского не заявляется.
+Also try `Jarvis, set a timer for five minutes`, `Jarvis, what time is it`, or `Jarvis, do we have ESP32`.
+In text chat omit `Jarvis`. `cancel` clears the pending action; `undo` proposes reversing the last consumption and needs confirmation. A confirmation expires after 45 seconds. A new request replaces the previous pending action.
 
-## Локальность и настройки
+## Configuration and privacy
 
-`config.yaml` — общие настройки. Неотслеживаемый `config.local.yaml` переопределяет их для конкретного ПК. Пути склада и Git вычисляются относительно файла конфигурации.
+| Profile | Machine overrides (ignored by Git) | Default inventory |
+| --- | --- | --- |
+| `config.en.yaml` — English | `config.en.local.yaml` | `data/inventory.en.sqlite3` |
+| `config.yaml` — Russian | `config.local.yaml` | `data/inventory.sqlite3` |
 
-По умолчанию Whisper `small` работает на CPU/int8 и читает уже скачанную модель. SAPI озвучивает локально на Windows. Ollama настроена на локальный адрес. После загрузки моделей эти компоненты могут работать без интернета.
+Paths are relative to the configuration file. Profiles do not share overrides or inventory by default. Existing Russian users can keep using `run.bat` unchanged. Inventory names and locations are user data and are not automatically translated.
 
-- `tts.engine: sapi` — локальная Windows-озвучка, `tts.sapi_voice: Irina`.
-- `tts.engine: edge-tts` — интернет-сервис; текст передаётся внешнему сервису. При ошибке пробуется SAPI.
-- `tts.engine: console` — только текст, подходит для Linux/macOS без настроенного голоса.
-- `brain.provider: none` — только базовые команды, без LLM.
-- Для DeepSeek/OpenAI укажите `provider`, `model`, соответствующий `base_url` и ключ в `.env`. Автоматического облачного переключения нет.
-- Для CUDA укажите `stt.device: cuda`, `compute_type: float16`. Требуются совместимые CUDA/cuDNN; при ошибке загрузки или распознавания приложение пробует CPU. См. [faster-whisper](https://github.com/SYSTRAN/faster-whisper#gpu).
-
-На проверенном ПК (RTX 3070 8 ГБ, 32 ГБ RAM) выбран CPU для Whisper, чтобы оставить видеопамять Ollama. Распознавание одной синтезированной русской фразы заняло около 1,7 с; это не показатель полной задержки и не испытание в шуме.
-
-## Дополнительные интеграции
-
-По умолчанию Home Assistant и Git отключены. В `config.local.yaml`:
+Example `config.en.local.yaml`:
 
 ```yaml
-skills:
-  smart_home:
-    enabled: true
-    ha_url: http://homeassistant.local:8123
-    allowed_entities:
-      - light.workbench
-  github_tools:
-    enabled: true
-    repo_path: C:/path/to/your/repository
+tts:
+  sapi_voice: Zira
+audio:
+  input_device: null  # Current Windows input, including redirected RDP audio
 ```
 
-Токен Home Assistant храните в `.env` как `HA_ACCESS_TOKEN=...`; `HA_BASE_URL` при необходимости переопределяет URL. Включать можно только перечисленные `allowed_entities`. Ответ о принятой команде означает успешный HTTP-ответ HA, а не измерение фактического состояния нагрузки. Интеграция не является системой безопасности для нагревателей и оборудования.
+- Whisper `small` defaults to CPU/int8 with cached models only. Ollama defaults to localhost. SAPI runs on Windows. These components can run without internet after installation.
+- `tts.engine: console` provides text output, including on Linux/macOS. `chat --mute` also avoids speech.
+- **`tts.engine: edge-tts` uses an online service and sends text to it.** It is optional; an error falls back to SAPI. There is no automatic cloud LLM fallback.
+- `voice-settings.bat` opens an optional local voice audition panel. The panel includes online Edge voices and can contact that service to list or preview them. Its saved profiles are drafts; they do not change the assistant configuration. The panel is currently in Russian.
+- Use `main.py devices` to list microphones; `listen --config-file config.en.yaml --microphone fifine` selects a matching device. Device indices can change after reconnecting.
+- In RDP, enable microphone and speaker redirection. Playback uses the current Windows output.
+- CUDA is optional: set `stt.device: cuda` and `compute_type: float16` with compatible CUDA/cuDNN libraries. Loading or recognition errors trigger a CPU retry.
 
-Git требует установленного Git и настроенной авторизации. Сначала вручную подготовьте файлы через `git add <files>`: ассистент **не добавляет все файлы автоматически**. При ошибке commit push не запускается. Для Issue нужен `gh auth login`. Репозиторий фиксируется настройкой, модель не выбирает произвольный путь.
+Optional Home Assistant integration requires a URL, an explicit `allowed_entities` list, and `HA_ACCESS_TOKEN` in `.env`. Git uses a fixed configured repository and commits only files you staged yourself; a failed commit prevents push. GitHub issues require authenticated `gh`. See the [Russian integration reference](README.ru.md#дополнительные-интеграции).
 
-## Ограничения
+## Current limits
 
-- Это настольный процесс: окно нужно оставить открытым. Таймеры теряются при выходе, поддерживается до 20 таймеров по 24 часа.
-- Активация определяется по распознанной фразе, отдельной лёгкой wake-word модели нет. Запись одной фразы ограничена 15 секундами. Во время обработки и озвучки перебивать ассистента нельзя.
-- Детектор начала речи использует порог громкости; в шумной мастерской подберите `audio.energy_threshold`. Устойчивость к вытяжке не гарантируется.
-- Выбранная деталь хранится в текущем процессе; последнее списание и его отмена — в базе. При нескольких совпадениях требуется уточнение.
-- Голосовое подтверждение не является аутентификацией. Не включайте чувствительные интеграции в общем помещении без оценки условий.
-- Офлайн-голос SAPI доступен только на Windows. Piper и отдельное управление ТВ без Home Assistant не реализованы.
+- Keep the process open. Timers are lost on exit; at most 20 timers, each up to 24 hours.
+- Wake detection runs on transcribed speech, not on a dedicated wake-word model. Utterances are limited to 15 seconds. You cannot interrupt processing or speech playback.
+- Speech starts based on an energy threshold. Extractor fans and other workshop noise can interfere; tune `audio.energy_threshold` for your setup.
+- Core English inventory, confirmation, clock and timer responses are localized. Some CLI help, diagnostics, the voice panel and optional integrations still contain Russian.
+- Windows SAPI is the integrated offline voice engine. Piper/Silero experiments are not part of the supported runtime.
+- Voice confirmation is not authentication. Home Assistant command acceptance is not a physical measurement of a device's state.
 
-## Разработка
+## Validation and development
 
 ```powershell
 .venv\Scripts\python.exe -m pip install -e ".[dev]"
 .venv\Scripts\python.exe -m pytest -q
-.venv\Scripts\python.exe -m build --wheel
 ```
 
-CLI установлен как `maker-assistant`; запускайте из каталога с `config.yaml` или передавайте `--config-file`. Основные файлы: `assistant/cli.py`, `core/brain.py`, `core/stt.py`, `core/tts.py`, `utils/audio.py`, `skills/`. Тесты не обращаются к реальным устройствам или GitHub. CI проверяет Windows/Linux и Python 3.10/3.13; физический звук и модели проверяются отдельно через `doctor`.
+Tests cover inventory transactions, confirmation/cancellation/expiry, undo, English command routing, timer language, profile isolation, audio handling and the voice panel. CI targets Windows/Linux on Python 3.10/3.13; this does not establish physical audio compatibility on every OS.
 
-На Windows можно повторить проверку пяти аудиофраз настоящей моделью (нужны локальная модель `small` и голос Irina):
+On Windows, with cached Whisper `small` and SAPI Irina/David, run the opt-in speech integration test:
 
 ```powershell
 $env:MAKER_TEST_VOICE="1"
-.venv\Scripts\python.exe -m pytest tests/test_voice_integration.py -q
+.venv\Scripts\python.exe -m pytest tests/test_voice_integration.py -q -s
 Remove-Item Env:MAKER_TEST_VOICE
 ```
 
-Пример расширения: [examples/custom_skill.py](examples/custom_skill.py). Импортируйте модуль в `assistant/cli.py`, чтобы декоратор зарегистрировал функцию. Для действий с побочными эффектами обязательно используйте `mutating=True`.
+This synthesizes five phrases in each language, transcribes them with real Whisper, executes the commands on temporary stock, and checks the result. **Synthetic speech testing is not evidence of accuracy with human voices or workshop noise.**
 
-## Происхождение
+See [examples/custom_skill.py](examples/custom_skill.py) for adding a skill. Register side-effecting actions with `mutating=True`.
 
-Вдохновлено [disler/always-on-ai-assistant](https://github.com/disler/always-on-ai-assistant), демонстрирующим архитектуру постоянно доступного голосового агента. Исходный проект также поддерживает локальные компоненты. Здесь акцент на складе радиодеталей, рабочем месте и проверяемых действиях; превосходство по скорости не заявляется.
+## Background
 
-MIT — [LICENSE](LICENSE). Баннер создан с помощью генерации изображений.
+Inspired by [disler/always-on-ai-assistant](https://github.com/disler/always-on-ai-assistant). This project focuses on electronics inventory, confirmation and undo. It does not claim to outperform the original or replace mature tools.
+
+MIT — [LICENSE](LICENSE). Artwork was generated with AI and is illustrative, not a product screenshot.

@@ -16,7 +16,7 @@ def load_config(config_path="config.yaml"):
     path = Path(config_path).expanduser().resolve()
     load_dotenv(path.parent / ".env", override=False)
     config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    local = path.with_name("config.local.yaml")
+    local = path.with_name(path.stem + ".local" + path.suffix)
     if local.exists() and local != path:
         _merge(config, yaml.safe_load(local.read_text(encoding="utf-8")) or {})
     brain = config.setdefault("brain", {})

@@ -6,6 +6,7 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 from assistant.skills.registry import registry
+from assistant.i18n import tr
 
 _path = Path("data/inventory.sqlite3")
 _lock = threading.RLock()
@@ -53,14 +54,14 @@ def import_inventory(path):
     data = json.loads(Path(path).read_text(encoding="utf-8"))
     rows = data["components"]
     if not isinstance(rows, list) or not rows:
-        raise ValueError("Список компонентов пуст")
+        raise ValueError(tr("Список компонентов пуст", "Component list is empty"))
     for row in rows:
         if type(row.get("qty")) is not int or row["qty"] < 0 or not row.get("name"):
-            raise ValueError("Нужны название и неотрицательный целый остаток")
+            raise ValueError(tr("Нужны название и неотрицательный целый остаток", "A name and a nonnegative integer quantity are required"))
     with _lock, _connect() as db:
         db.execute("BEGIN IMMEDIATE")
         if db.execute("SELECT count(*) FROM components").fetchone()[0]:
-            raise ValueError("Импорт разрешён только в пустую базу")
+            raise ValueError(tr("Импорт разрешён только в пустую базу", "Import requires an empty inventory"))
         db.executemany("INSERT INTO components(name,category,package,qty,location) VALUES(?,?,?,?,?)",
             [(r["name"], r.get("category", ""), r.get("package", ""), r["qty"], r.get("location", "")) for r in rows])
     return len(rows)
@@ -69,7 +70,7 @@ def import_inventory(path):
 def _matches(db, query):
     tokens = normalize(query)
     if not tokens:
-        raise ValueError("Уточни название или номинал детали")
+        raise ValueError(tr("Уточни название или номинал детали", "Specify a component name or value"))
     rows = db.execute("SELECT * FROM components ORDER BY id").fetchall()
     return [r for r in rows if all(any((t == word if any(c.isdigit() for c in t) and not any(c.isalpha() for c in t.rstrip("k")) else t in word) for word in normalize(
         " ".join([r["name"], r["category"], r["package"]]))) for t in tokens)]
@@ -82,28 +83,28 @@ def check_component(query: str) -> str:
         rows = _matches(db, query)
         _selected = rows[0]["id"] if len(rows) == 1 else None
         if not rows:
-            return f"Деталь '{query}' не найдена."
-        result = " ".join(f"{r['name']} ({r['package']}): {r['qty']} шт., {r['location']}." for r in rows[:5])
+            return tr(f"Деталь '{query}' не найдена.", f"Component '{query}' not found.")
+        result = " ".join(f"{r['name']} ({r['package']}): {r['qty']} " + tr("шт.", "pcs") + f", {r['location']}." for r in rows[:5])
         if len(rows) > 1:
-            result += f" Найдено вариантов: {len(rows)}. Уточни деталь перед списанием."
+            result += tr(f" Найдено вариантов: {len(rows)}. Уточни деталь перед списанием.", f" Found {len(rows)} matches. Specify one component before taking stock.")
         return result
 
 
 @registry.register("consume_component", "Списать детали. Пустой query означает последнюю однозначно найденную деталь.", mutating=True)
 def consume_component(query: str = "", count: int = 1, project: str = "текущий проект") -> str:
     if type(count) is not int or not 1 <= count <= 1000000:
-        raise ValueError("Количество должно быть целым числом от 1 до 1000000")
+        raise ValueError(tr("Количество должно быть целым числом от 1 до 1000000", "Quantity must be an integer between 1 and 1000000"))
     with _lock, _connect() as db:
         db.execute("BEGIN IMMEDIATE")
         rows = _matches(db, query) if query.strip() else db.execute("SELECT * FROM components WHERE id=?", (_selected,)).fetchall()
         if len(rows) != 1:
-            return "Уточни деталь: нужен один однозначный результат поиска."
+            return tr("Уточни деталь: нужен один однозначный результат поиска.", "Specify a component: exactly one match is required.")
         row = rows[0]
         if row["qty"] < count:
-            return f"Недостаточно деталей: в наличии {row['qty']} шт."
+            return tr(f"Недостаточно деталей: в наличии {row['qty']} шт.", f"Insufficient stock: {row['qty']} pcs available.")
         db.execute("UPDATE components SET qty=qty-? WHERE id=?", (count, row["id"]))
         db.execute("INSERT INTO movements(component_id,count,project) VALUES(?,?,?)", (row["id"], count, project))
-        return f"Списано {count} шт. {row['name']}. Осталось {row['qty']-count}."
+        return tr(f"Списано {count} шт. {row['name']}. Осталось {row['qty']-count}.", f"Taken {count} pcs of {row['name']}. Remaining: {row['qty']-count}.")
 
 
 @registry.register("undo_consumption", "Отменить последнее неотменённое списание деталей.", mutating=True)
@@ -112,7 +113,7 @@ def undo_consumption() -> str:
         db.execute("BEGIN IMMEDIATE")
         row = db.execute("SELECT * FROM movements WHERE undone=0 ORDER BY id DESC LIMIT 1").fetchone()
         if row is None:
-            return "Нет списаний для отмены."
+            return tr("Нет списаний для отмены.", "No consumption to undo.")
         db.execute("UPDATE components SET qty=qty+? WHERE id=?", (row["count"], row["component_id"]))
         db.execute("UPDATE movements SET undone=1 WHERE id=?", (row["id"],))
-        return f"Списание отменено. Возвращено {row['count']} шт."
+        return tr(f"Списание отменено. Возвращено {row['count']} шт.", f"Consumption undone. Restored {row['count']} pcs.")

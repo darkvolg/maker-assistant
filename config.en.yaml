@@ -1,0 +1,43 @@
+# English Windows profile. Machine overrides: config.en.local.yaml.
+# The Russian config.yaml and inventory are independent.
+assistant:
+  name: Jarvis
+  wake_word: jarvis
+  wake_aliases: [jarves]
+  language: en
+audio:
+  sample_rate: 16000
+  input_device: null
+  energy_threshold: 0.015
+  silence_timeout_sec: 0.8
+stt:
+  model_size: small
+  device: cpu
+  compute_type: int8
+  beam_size: 3
+  local_files_only: true
+tts:
+  engine: sapi
+  sapi_voice: David
+  voice: en-US-GuyNeural
+  rate: +0%
+  volume: +0%
+brain:
+  provider: ollama
+  model: qwen2.5:7b-instruct
+  base_url: http://127.0.0.1:11434/v1
+  api_key: ollama
+  timeout_sec: 60
+skills:
+  components:
+    enabled: true
+    storage_path: data/inventory.en.sqlite3
+  system_tools:
+    enabled: true
+  smart_home:
+    enabled: false
+    ha_url: ""
+    allowed_entities: []
+  github_tools:
+    enabled: false
+    repo_path: .

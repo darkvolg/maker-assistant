@@ -15,6 +15,10 @@ app = typer.Typer(help="Голосовой помощник для мастер�
 console = Console()
 
 
+def message(config, ru, en):
+    return en if config.get("assistant", {}).get("language") == "en" else ru
+
+
 def setup(config_file):
     config = load_config(config_file)
     for module in (components, smart_home, github_tools):
@@ -31,10 +35,10 @@ def chat(config_file: str = "config.yaml", mute: bool = False):
         config["tts"]["engine"] = "console"
     brain, tts = Brain(config), TextToSpeech(config)
     system_tools.set_tts_notifier(tts.speak)
-    console.print("Maker Assistant · найди ESP32 · взял 2 · подтверждаю · отмени · exit")
+    console.print(message(config, "Maker Assistant · найди ESP32 · взял 2 · подтверждаю · отмени · exit", "Maker Assistant · find ESP32 · take two · confirm · undo · exit"))
     try:
         while True:
-            query = console.input("Вы: ").strip()
+            query = console.input(message(config, "Вы: ", "You: ")).strip()
             if query.lower() in ("exit", "quit", "выход"):
                 break
             if query:
@@ -65,9 +69,9 @@ def listen(config_file: str = "config.yaml", microphone: str = "auto"):
     recorder = AudioRecorder(device=device)
     detector = WakeWordDetector(config["assistant"]["wake_word"], config["assistant"].get("wake_aliases", []))
     follow_up = False
-    tts.speak("Ассистент готов. Назови моё имя и команду.")
+    tts.speak(message(config, "Ассистент готов. Назови моё имя и команду.", "Assistant ready. Say my name followed by a command."))
     tts.wait()
-    console.print("Голосовой режим. Ctrl+C — выход. Каждую команду начинай со слова активации.")
+    console.print(message(config, "Голосовой режим. Ctrl+C — выход. Каждую команду начинай со слова активации.", "Voice mode. Ctrl+C to exit. Start every command with the wake word."))
     try:
         while True:
             audio = recorder.record_until_silence(
@@ -84,11 +88,11 @@ def listen(config_file: str = "config.yaml", microphone: str = "auto"):
             if command is None:
                 continue
             if not command:
-                tts.speak("Слушаю.")
+                tts.speak(message(config, "Слушаю.", "Listening."))
                 tts.wait()
                 follow_up = True
                 continue
-            console.print(f"Вы: {command}", markup=False)
+            console.print(message(config, f"Вы: {command}", f"You: {command}"), markup=False)
             response = brain.process(command)
             console.print(response, markup=False)
             tts.speak(response)
@@ -96,7 +100,7 @@ def listen(config_file: str = "config.yaml", microphone: str = "auto"):
     except KeyboardInterrupt:
         pass
     except Exception as exc:
-        console.print(f"Голосовой режим остановлен: {exc}. Запусти doctor.", markup=False)
+        console.print(message(config, f"Голосовой режим остановлен: {exc}. Запусти doctor.", f"Voice mode stopped: {exc}. Run doctor."), markup=False)
         raise typer.Exit(1)
     finally:
         system_tools.set_tts_notifier(None)
@@ -205,6 +209,7 @@ def download_model(config_file: str = "config.yaml"):
 @app.command("test-voice")
 def test_voice(config_file: str = "config.yaml"):
     """Произнести тестовую фразу выбранным голосом."""
-    tts = TextToSpeech(load_config(config_file))
-    tts.speak("Проверка голоса. Помощник для мастерской готов к работе.")
+    config = load_config(config_file)
+    tts = TextToSpeech(config)
+    tts.speak(message(config, "Проверка голоса. Помощник для мастерской готов к работе.", "Voice test. Your workbench assistant is ready."))
     tts.close()
